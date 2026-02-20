@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Complete Network Planning Suite</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+
+
+<style>
+*{box-sizing:border-box;font-family:Segoe UI,Arial}
+
+body{
+    margin:0;
+    background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+    color:#fff;
+    padding:30px;
+}
+
+.container{max-width:1300px;margin:auto}
+
+.card{
+    background:rgba(255,255,255,0.08);
+    backdrop-filter:blur(10px);
+    padding:25px;
+    border-radius:15px;
+    margin-bottom:25px;
+    box-shadow:0 8px 20px rgba(0,0,0,0.4);
+}
+
+h2{margin-top:0}
+
+.flex{display:flex;gap:30px;flex-wrap:wrap;align-items:center}
+
+input{
+    padding:8px;
+    border-radius:6px;
+    border:none;
+    font-size:14px;
+}
+
+button{
+    padding:6px 12px;
+    border:none;
+    border-radius:6px;
+    cursor:pointer;
+    font-weight:bold;
+    background:#00c6ff;
+    color:#000;
+}
+
+button:hover{background:#00ffcc}
+
+.value-box{
+    background:#111;
+    padding:8px 12px;
+    border-radius:6px;
+    min-width:80px;
+    text-align:center;
+    font-weight:bold;
+    color:#00ffcc;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:15px;
+    font-size:13px;
+}
+
+th,td{
+    padding:8px;
+    border-bottom:1px solid rgba(255,255,255,0.2);
+    text-align:center;
+}
+
+th{background:rgba(255,255,255,0.1)}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<!-- ================= IPv4 ================= -->
+
+<div class="card">
+<h2>IPv4 Subnet Calculator</h2>
+
+<div class="flex">
+<input type="text" id="ip" value="192.168.1.1" oninput="updateIPv4()">
+
+<button onclick="changeMask(-1)">-</button>
+<span class="value-box" id="maskBits">24</span>
+<button onclick="changeMask(1)">+</button>
+
+<input type="text" id="netmask" readonly>
+</div>
+</div>
+
+<!-- ================= SUBNET ALLOCATION ================= -->
+
+<div class="card">
+<h2>Subnet Allocation</h2>
+
+<div class="flex">
+<div>
+<label>Subnet Bits</label><br>
+<button onclick="changeSubnetBits(-1)">-</button>
+<span class="value-box" id="subnetBits">2</span>
+<button onclick="changeSubnetBits(1)">+</button>
+</div>
+
+<div>
+<label>Number of Subnets</label><br>
+<div class="value-box" id="numSubnets"></div>
+</div>
+
+<div>
+<label>Addresses per Subnet</label><br>
+<div class="value-box" id="addrPerSubnet"></div>
+</div>
+</div>
+
+<table>
+<thead>
+<tr>
+<th>Subnet</th>
+<th>Mask</th>
+<th>Network</th>
+<th>First</th>
+<th>Last</th>
+<th>Broadcast</th>
+<th>Total IPs</th>
+<th>Usable Hosts</th>
+</tr>
+</thead>
+<tbody id="subnetTable"></tbody>
+</table>
+</div>
+
+<!-- ================= HOST REQUIREMENT ================= -->
+
+<div class="card">
+<h2>Host Requirement Planner</h2>
+
+<input type="number" id="requiredHosts" placeholder="Required Hosts">
+<button onclick="calculateRequirement()">Suggest</button>
+
+<div id="requirementResult"></div>
+</div>
+
+<!-- ================= IPv6 ================= -->
+
+<div class="card">
+<h2>IPv6 Detailed Information</h2>
+
+<div class="flex">
+<input type="text" id="ipv6Base" value="2001:db8::">
+<input type="number" id="ipv6Prefix" value="64">
+<button onclick="generateIPv6()">Generate</button>
+</div>
+
+<table>
+<thead>
+<tr>
+<th>IP Address</th>
+<th>Full IP Address</th>
+<th>Total IP Addresses</th>
+<th>Network</th>
+<th>IP Range</th>
+</tr>
+</thead>
+<tbody id="ipv6Table"></tbody>
+</table>
+</div>
+
+<!-- ================= VLSM ================= -->
+
+<div class="card">
+<h2>Auto VLSM Department Planner</h2>
+
+<input type="text" id="vlsmBase" value="192.168.10.0/24"><br><br>
+
+<input type="text" id="deptName" placeholder="Department">
+<input type="number" id="deptHosts" placeholder="Hosts">
+<button onclick="addDept()">Add</button>
+
+<table>
+<thead><tr><th>Department</th><th>Hosts</th></tr></thead>
+<tbody id="deptTable"></tbody>
+</table>
+
+<button onclick="generateVLSM()">Generate Plan</button>
+
+<table>
+<thead>
+<tr>
+<th>Dept</th>
+<th>Hosts</th>
+<th>CIDR</th>
+<th>Network</th>
+<th>First</th>
+<th>Last</th>
+<th>Broadcast</th>
+</tr>
+</thead>
+<tbody id="vlsmResult"></tbody>
+</table>
+</div>
+
+<!-- ================= EXPORT ================= -->
+
+<div class="card">
+<h2>Export</h2>
+<button onclick="exportPDF()">Export to PDF</button>
+</div>
+
+</div>
+
+<script>
+
+let maskBits=24;
+let subnetBits=2;
+let departments=[];
+
+function cidrToMask(bits){
+    let mask=[];
+    for(let i=0;i<4;i++){
+        let n=Math.min(bits,8);
+        mask.push(256-Math.pow(2,8-n));
+        bits-=n;
+    }
+    return mask.join('.');
+}
+
+function ipToInt(ip){
+    return ip.split('.').reduce((a,o)=>(a<<8)+parseInt(o),0);
+}
+
+function intToIp(int){
+    return [(int>>>24)&255,(int>>>16)&255,(int>>>8)&255,int&255].join('.');
+}
+
+function changeMask(v){
+    maskBits+=v;
+    if(maskBits<1)maskBits=1;
+    if(maskBits>30)maskBits=30;
+    document.getElementById("maskBits").innerText=maskBits;
+    updateIPv4();
+}
+
+function changeSubnetBits(v){
+    subnetBits+=v;
+    if(subnetBits<0)subnetBits=0;
+    document.getElementById("subnetBits").innerText=subnetBits;
+    updateIPv4();
+}
+
+function updateIPv4(){
+
+    document.getElementById("netmask").value=cidrToMask(maskBits);
+
+    let newMask=maskBits+subnetBits;
+    let block=Math.pow(2,32-newMask);
+    let totalSubnets=Math.pow(2,subnetBits);
+
+    document.getElementById("numSubnets").innerText=totalSubnets;
+    document.getElementById("addrPerSubnet").innerText=block;
+
+    let base=ipToInt(document.getElementById("ip").value)&ipToInt(cidrToMask(maskBits));
+
+    let tbody=document.getElementById("subnetTable");
+    tbody.innerHTML="";
+
+    for(let i=0;i<totalSubnets;i++){
+        let network=base+(i*block);
+        let broadcast=network+block-1;
+
+        tbody.innerHTML+=`
+        <tr>
+        <td>${intToIp(network)}/${newMask}</td>
+        <td>${cidrToMask(newMask)}</td>
+        <td>${intToIp(network)}</td>
+        <td>${intToIp(network+1)}</td>
+        <td>${intToIp(broadcast-1)}</td>
+        <td>${intToIp(broadcast)}</td>
+        <td>${block}</td>
+        <td>${block-2}</td>
+        </tr>`;
+    }
+}
+
+updateIPv4();
+
+function calculateRequirement(){
+    let hosts=parseInt(document.getElementById("requiredHosts").value);
+    if(!hosts)return;
+    let bits=0;
+    while(Math.pow(2,bits)-2<hosts)bits++;
+    let cidr=32-bits;
+    document.getElementById("requirementResult").innerHTML=
+    `Recommended CIDR: /${cidr}<br>
+     Usable Hosts: ${Math.pow(2,bits)-2}<br>
+     Private Pools:<br>
+     192.168.0.0/${cidr}<br>
+     172.16.0.0/${cidr}<br>
+     10.0.0.0/${cidr}`;
+}
+
+function generateIPv6(){
+    let base=document.getElementById("ipv6Base").value;
+    let prefix=parseInt(document.getElementById("ipv6Prefix").value);
+    let total="2^"+(128-prefix);
+    let network=base+"/"+prefix;
+    let range=base+" - "+base+"ffff:ffff:ffff:ffff";
+    document.getElementById("ipv6Table").innerHTML=
+    `<tr>
+    <td>${base}</td>
+    <td>${network}</td>
+    <td>${total}</td>
+    <td>${network}</td>
+    <td>${range}</td>
+    </tr>`;
+}
+
+function addDept(){
+    let name=document.getElementById("deptName").value;
+    let hosts=parseInt(document.getElementById("deptHosts").value);
+    if(!name||!hosts)return;
+    departments.push({name,hosts});
+    let t=document.getElementById("deptTable");
+    t.innerHTML="";
+    departments.forEach(d=>{
+        t.innerHTML+=`<tr><td>${d.name}</td><td>${d.hosts}</td></tr>`;
+    });
+}
+
+function generateVLSM(){
+    departments.sort((a,b)=>b.hosts-a.hosts);
+    let base=document.getElementById("vlsmBase").value.split('/');
+    let current=ipToInt(base[0]);
+    let t=document.getElementById("vlsmResult");
+    t.innerHTML="";
+    departments.forEach(d=>{
+        let bits=0;
+        while(Math.pow(2,bits)-2<d.hosts)bits++;
+        let cidr=32-bits;
+        let block=Math.pow(2,32-cidr);
+        let network=current;
+        let broadcast=network+block-1;
+        t.innerHTML+=`
+        <tr>
+        <td>${d.name}</td>
+        <td>${d.hosts}</td>
+        <td>/${cidr}</td>
+        <td>${intToIp(network)}</td>
+        <td>${intToIp(network+1)}</td>
+        <td>${intToIp(broadcast-1)}</td>
+        <td>${intToIp(broadcast)}</td>
+        </tr>`;
+        current=broadcast+1;
+    });
+}
+
+async function exportPDF(){
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    doc.setFontSize(18);
+    doc.text("Network Planning Report", 14, 20);
+
+    let yPosition = 30;
+
+    /* ================= IPv4 ================= */
+
+    doc.setFontSize(14);
+    doc.text("IPv4 Subnet Allocation:", 14, yPosition);
+    yPosition += 5;
+
+    const ipv4Head = [[
+        "Subnet",
+        "Mask",
+        "Network",
+        "First IP",
+        "Last IP",
+        "Broadcast",
+        "Total IPs",
+        "Usable Hosts"
+    ]];
+
+    const ipv4Body = [];
+    document.querySelectorAll("#subnetTable tr").forEach(row => {
+        let rowData = [];
+        row.querySelectorAll("td").forEach(cell => {
+            rowData.push(cell.innerText);
+        });
+        ipv4Body.push(rowData);
+    });
+
+    doc.autoTable({
+        head: ipv4Head,
+        body: ipv4Body,
+        startY: yPosition,
+        theme: 'grid',
+        styles: { fontSize: 8 }
+    });
+
+    yPosition = doc.lastAutoTable.finalY + 10;
+
+    /* ================= IPv6 ================= */
+
+    doc.setFontSize(14);
+    doc.text("IPv6 Information:", 14, yPosition);
+    yPosition += 5;
+
+    const ipv6Head = [[
+        "IP Address",
+        "Full IP Address",
+        "Total IP Addresses",
+        "Network",
+        "IP Range"
+    ]];
+
+    const ipv6Body = [];
+    document.querySelectorAll("#ipv6Table tr").forEach(row => {
+        let rowData = [];
+        row.querySelectorAll("td").forEach(cell => {
+            rowData.push(cell.innerText);
+        });
+        ipv6Body.push(rowData);
+    });
+
+    doc.autoTable({
+        head: ipv6Head,
+        body: ipv6Body,
+        startY: yPosition,
+        theme: 'grid',
+        styles: { fontSize: 8 }
+    });
+
+    yPosition = doc.lastAutoTable.finalY + 10;
+
+    /* ================= VLSM ================= */
+
+    doc.setFontSize(14);
+    doc.text("VLSM Department Plan:", 14, yPosition);
+    yPosition += 5;
+
+    const vlsmHead = [[
+        "Department",
+        "Hosts",
+        "CIDR",
+        "Network",
+        "First IP",
+        "Last IP",
+        "Broadcast"
+    ]];
+
+    const vlsmBody = [];
+    document.querySelectorAll("#vlsmResult tr").forEach(row => {
+        let rowData = [];
+        row.querySelectorAll("td").forEach(cell => {
+            rowData.push(cell.innerText);
+        });
+        vlsmBody.push(rowData);
+    });
+
+    doc.autoTable({
+        head: vlsmHead,
+        body: vlsmBody,
+        startY: yPosition,
+        theme: 'grid',
+        styles: { fontSize: 8 }
+    });
+
+    doc.save("Network_Planning_Report.pdf");
+}
+
+
+</script>
+
+</body>
+</html>
